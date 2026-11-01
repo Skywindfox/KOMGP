@@ -1,0 +1,40 @@
+# Arch 用户从源码构建用（binary 包由 packaging/build-packages.sh 直接产出）
+#   tar -xzf malody4k-v0.1-test-src.tar.gz && cd malody4k-v0.1-test && cp ../PKGBUILD . && makepkg -si
+pkgname=malody4k
+pkgver=0.1.test
+pkgrel=1
+pkgdesc="4K fall-down rhythm game with Malody chart support (v0.1-test)"
+arch=(any)
+url="https://github.com/example/malody4k"
+license=(MIT)
+depends=(java-runtime>=17)
+makedepends=(jdk-openjdk)
+options=(!strip)
+
+# 本地构建：把源码包放到与 PKGBUILD 同目录即可
+source=("malody4k-v0.1-test-src.tar.gz")
+sha256sums=('SKIP')
+_tag=v0.1-test
+
+build() {
+    cd "$srcdir/malody4k-$_tag"
+    mkdir -p build/classes
+    javac --release 17 -encoding UTF-8 \
+        -cp "lib/jorbis-0.0.17.jar:lib/jlayer-1.0.1.4.jar" \
+        -d build/classes $(find src/main/java -name '*.java')
+    jar --create --file build/Malody4K.jar --main-class rhythm.Main -C build/classes .
+}
+
+package() {
+    cd "$srcdir/malody4k-$_tag"
+    install -Dm644 build/Malody4K.jar "$pkgdir/usr/share/malody4k/Malody4K.jar"
+    for j in lib/*.jar; do
+        install -Dm644 "$j" "$pkgdir/usr/share/malody4k/lib/$(basename "$j")"
+    done
+    install -Dm755 packaging/launcher.sh "$pkgdir/usr/bin/malody4k"
+    install -Dm644 packaging/malody4k.desktop "$pkgdir/usr/share/applications/malody4k.desktop"
+    install -Dm644 packaging/malody4k.png \
+        "$pkgdir/usr/share/icons/hicolor/256x256/apps/malody4k.png"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/malody4k/README.md"
+    install -Dm644 LICENSE "$pkgdir/usr/share/doc/malody4k/LICENSE"
+}

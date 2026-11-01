@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=KOMGP
+Name[zh_CN]=KOMGP
+GenericName=Rhythm Game Player
+GenericName[zh_CN]=4K 下落式音乐游戏
+Comment=Fall-down rhythm game: Malody .mc/.mcz and KOMGP plain-text charts
+Comment[zh_CN]=KitsuneOS 音乐游戏播放器，支持 Malody 与 KOMGP 明文谱面
+Exec=komgp %f
+Icon=komgp
+Terminal=false
+Categories=Game;ArcadeGame;
+Keywords=rhythm;music;game;malody;4k;maniai;
+StartupNotify=true

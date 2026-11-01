@@ -1,0 +1,7 @@
+build/
+dist/
+charts/
+config.json
+shots/window-*.png
+*.log
+packaging/__pycache__/
