@@ -53,13 +53,20 @@ if [ -z "$MINGW_BIN" ]; then
     done
 fi
 if [ -z "$MINGW_BIN" ] || [ ! -x "$MINGW_BIN/x86_64-w64-mingw32-gcc" ]; then
-    echo "    !! 找不到 x86_64-w64-mingw32-gcc，无法生成 .exe" >&2
-    echo "       安装 mingw64-gcc，或用 MINGW_BIN=/path/to/bin 指定" >&2
-    exit 1
+    # 启动器只是个稳定的壳子，不随 Java 代码变化；找不到工具链时复用上次编好的
+    if [ -f build/KOMGP.exe ]; then
+        echo "    (warning) 没有 mingw 工具链，复用已有的 build/KOMGP.exe" >&2
+        echo "    如需重新编译：安装 mingw64-gcc 或设 MINGW_BIN=/path/to/bin" >&2
+    else
+        echo "    !! 找不到 x86_64-w64-mingw32-gcc，且没有可复用的 build/KOMGP.exe" >&2
+        echo "       安装 mingw64-gcc，或用 MINGW_BIN=/path/to/bin 指定" >&2
+        exit 1
+    fi
+else
+    "$MINGW_BIN/x86_64-w64-mingw32-windres" packaging/win/launcher.rc -o "$STAGE/launcher_res.o"
+    "$MINGW_BIN/x86_64-w64-mingw32-gcc" -O2 -s -mwindows -municode \
+        -o build/KOMGP.exe packaging/win/launcher.c "$STAGE/launcher_res.o" -lshell32
 fi
-"$MINGW_BIN/x86_64-w64-mingw32-windres" packaging/win/launcher.rc -o "$STAGE/launcher_res.o"
-"$MINGW_BIN/x86_64-w64-mingw32-gcc" -O2 -s -mwindows -municode \
-    -o build/KOMGP.exe packaging/win/launcher.c "$STAGE/launcher_res.o" -lshell32
 echo "    build/KOMGP.exe ($(stat -c%s build/KOMGP.exe) 字节)"
 
 # ---------------------------------------------------------------- Linux 文件树
@@ -189,7 +196,7 @@ SRCROOT="$STAGE/$NAME-$VERSION"
 rm -rf "$SRCROOT"
 mkdir -p "$SRCROOT"
 tar --exclude=./build --exclude=./dist --exclude=./charts --exclude=./shots \
-    --exclude=./config.json --exclude='*.log' -cf - . | tar -xf - -C "$SRCROOT"
+    --exclude=./config.json --exclude=./.git --exclude='*.log' -cf - . | tar -xf - -C "$SRCROOT"
 ( cd "$STAGE" && tar --owner=0 --group=0 --numeric-owner --sort=name --mtime="@$EPOCH" \
       -czf "$DIST/${NAME}-${VERSION}-src.tar.gz" "$(basename "$SRCROOT")" )
 echo "    $DIST/${NAME}-${VERSION}-src.tar.gz"

@@ -28,8 +28,8 @@ public final class Settings {
     // ---- 音频 / 判定
     public double audioOffsetMs = 0;
     public double visualOffsetMs = 0;
-    public double volume = 0.8;
-    public double sfxVolume = 0.6;
+    public double volume = 0.6;
+    public double sfxVolume = 0.45;
     public double judgeScale = 1.0;
     public boolean practiceMode = false;
     public boolean autoplay = false;
