@@ -54,6 +54,7 @@ public final class SelfTest {
         testLibrary(charts);
         testChartBuilderDedup();
         testTextFormat(charts);
+        testHold(charts);
 
         System.out.println();
         System.out.println("==== 自测结果: " + passed + " 通过, " + failed + " 失败 ====");
@@ -275,6 +276,71 @@ public final class SelfTest {
         check("去重", c.noteCount() == 2);
         check("非法长条降级为单点", !c.hold[1]);
         check("列越界被裁掉", c.noteCount() == 2);
+    }
+
+    /** 长条：判定语义 + 渲染像素（曾经出现过"击中后条身消失"的回归）。 */
+    private static void testHold(Path dir) throws Exception {
+        komgp.core.Chart.Builder b = komgp.core.Chart.builder();
+        b.timing = komgp.core.Timing.of(new double[]{0}, new double[]{120}, 32);
+        b.columns = 4;
+        b.title = "HoldTest";
+        b.add(3, 1000, 1000, false);
+        b.add(3, 3000, 4600, true);   // 长条：3000ms 起，按住 1600ms
+        komgp.core.Chart c = b.build();
+        check("长条被识别", c.holdCount() == 1);
+
+        komgp.core.PlayState ps = new komgp.core.PlayState(c,
+                komgp.core.JudgeWindow.standard(), false, false);
+        for (double t = 0; t <= 2999; t += 5) ps.update(t);
+        komgp.core.Judge head = ps.press(3, 3000);
+        check("长条头部可命中", head != null && head.tier <= 1);
+        check("命中后处于按住状态", ps.isHolding(1));
+        for (double t = 3000; t <= 3800; t += 5) ps.update(t);
+        check("按住期间不断条", ps.holdBreaks == 0 && ps.isHolding(1));
+
+        // 渲染检查：按住时条身必须在画面里
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
+                1280, 720, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = img.createGraphics();
+        komgp.render.Painter.setDevice(1280, 720, 1.0, 0, 0);
+        komgp.render.Painter.quality(g);
+        g.setColor(komgp.render.Theme.BG);
+        g.fillRect(0, 0, 1280, 720);
+        komgp.render.Playfield pf = new komgp.render.Playfield(4);
+        double pxPerMs = komgp.render.Playfield.PX_PER_MS_BASE * 2.6;
+        pf.drawNotes(g, ps, 3800, pxPerMs, 0, true);
+        g.dispose();
+
+        int cx = (int) pf.laneCenter(3);
+        int body = 0;
+        for (int y = 80; y < 520; y += 3) {
+            int rgb = img.getRGB(cx, y);
+            int r = (rgb >> 16) & 0xFF;
+            int gg = (rgb >> 8) & 0xFF;
+            int bb = rgb & 0xFF;
+            if (r > 120 && r > bb + 40) body++;
+        }
+        check("按住时长条条身可见（像素采样 " + body + "）", body > 30);
+
+        // 松手后条身应消失
+        ps.release(3, 3900);
+        java.awt.image.BufferedImage img2 = new java.awt.image.BufferedImage(
+                1280, 720, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g2 = img2.createGraphics();
+        komgp.render.Painter.setDevice(1280, 720, 1.0, 0, 0);
+        g2.setColor(komgp.render.Theme.BG);
+        g2.fillRect(0, 0, 1280, 720);
+        pf.drawNotes(g2, ps, 3900, pxPerMs, 0, true);
+        g2.dispose();
+        int after = 0;
+        for (int y = 80; y < 520; y += 3) {
+            int rgb = img2.getRGB(cx, y);
+            int r = (rgb >> 16) & 0xFF;
+            int bb = rgb & 0xFF;
+            if (r > 120 && r > bb + 40) after++;
+        }
+        check("松手后条身消失（残留 " + after + "）", after < body / 2);
+        check("提前松手计断条", ps.holdBreaks == 1);
     }
 
     private static void testTextFormat(Path dir) throws Exception {

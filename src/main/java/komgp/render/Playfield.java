@@ -173,18 +173,20 @@ public final class Playfield {
             double yHead = yOf(t, judgeNow, pxPerMs, visualOffset);
             double yEnd = yOf(end, judgeNow, pxPerMs, visualOffset);
             boolean judged = ps.judged(i);
-            boolean holding = hold && judged && !ps.isHolding(i);
+            // 注意语义：isHolding() == 玩家「现在正按着」。之前这里取反了，
+            // 导致长条一旦被击中、条身反而消失。
+            boolean held = hold && judged && ps.isHolding(i);
 
-            if (hold && (!judged || holding)) {
+            if (hold && (!judged || held)) {
                 drawHoldBody(g, cx, yHead, yEnd, noteW * 0.62, Theme.laneColor(col));
+            }
+            if (held) {
+                // 按住状态：判定线上方给一道亮条，明确"还握着"
+                Painter.fill(g, cx - noteW * 0.34, judgeY - 4, noteW * 0.68, 6,
+                        Theme.mix(Theme.laneColor(col), Color.WHITE, 0.45f));
             }
 
             if (judged) {
-                if (holding && yEnd < judgeY + 30) {
-                    // 长条尾部已经越过判定线：画一个小尾巴
-                    Painter.round(g, cx - noteW * 0.31, Math.max(yEnd, judgeY - 2),
-                            noteW * 0.62, 3, 1.5, Theme.alpha(Theme.laneColor(col), 160));
-                }
                 continue;
             }
             if (yHead < -noteH || yHead > judgeY + noteH) continue;

@@ -107,6 +107,28 @@ public final class Shot {
                 PlayState ps = new PlayState(item.chart, JudgeWindow.standard(), false, false);
                 s.renderPreview(g, ps, -900);
             }
+            case "hold" -> {
+                // 固定画面：找一个长条，按住它，渲染在"正在按住"的瞬间
+                komgp.core.Chart ch = item.chart;
+                int hi = -1;
+                for (int i = 0; i < ch.noteCount(); i++) {
+                    if (ch.hold[i]) { hi = i; break; }
+                }
+                if (hi < 0) {
+                    Log.warn("这张谱面没有长条");
+                    break;
+                }
+                double headT = ch.time[hi];
+                PlayState ps = new PlayState(ch, JudgeWindow.standard(), false, false);
+                for (double t = 0; t <= headT - 1; t += 5) ps.update(t);
+                ps.press(ch.column[hi], headT);
+                double renderAt = headT + (ch.endTime[hi] - headT) * 0.45;
+                for (double t = headT; t <= renderAt; t += 5) ps.update(t);
+                Log.info(String.format("长条: 列%d %.0f->%.0fms, 渲染于 %.0fms, 正在按住=%s",
+                        ch.column[hi], headT, ch.endTime[hi], renderAt, ps.isHolding(hi)));
+                PlayScreen s = new PlayScreen(app, item);
+                s.renderPreview(g, ps, renderAt);
+            }
             case "editor" -> {
                 komgp.ui.EditorScreen s = new komgp.ui.EditorScreen(app, item.path);
                 s.onEnter();
