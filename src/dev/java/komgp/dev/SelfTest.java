@@ -55,6 +55,7 @@ public final class SelfTest {
         testChartBuilderDedup();
         testTextFormat(charts);
         testHold(charts);
+        testAudioImport(charts);
 
         System.out.println();
         System.out.println("==== 自测结果: " + passed + " 通过, " + failed + " 失败 ====");
@@ -276,6 +277,44 @@ public final class SelfTest {
         check("去重", c.noteCount() == 2);
         check("非法长条降级为单点", !c.hold[1]);
         check("列越界被裁掉", c.noteCount() == 2);
+    }
+
+    /** 用户把 music.mp3 丢进目录后的导入链路：复制 -> 解码 -> 存 .kmt -> 回读。 */
+    private static void testAudioImport(Path charts) throws Exception {
+        Path mp3 = Path.of("music.mp3");
+        if (!java.nio.file.Files.exists(mp3)) {
+            System.out.println("  [--]   跳过音频导入测试（没有 music.mp3）");
+            return;
+        }
+        Path tmp = java.nio.file.Files.createTempDirectory("komgp-import");
+        Path dst = komgp.cfg.ChartLibrary.importTo(mp3, tmp);
+        check("音频可导入到曲库目录", dst != null && java.nio.file.Files.exists(dst));
+        if (dst == null) return;
+        komgp.audio.Pcm pcm = komgp.audio.Decoder.decode(
+                java.nio.file.Files.readAllBytes(dst), dst.getFileName().toString());
+        System.out.println("    导入音频: " + dst.getFileName() + " -> " + pcm);
+        check("导入的 mp3 能解码", pcm.rms() > 0.001);
+        check("导入的 mp3 时长合理", pcm.durationMs() > 3000);
+
+        komgp.core.Chart.Builder b = komgp.core.Chart.builder();
+        b.timing = komgp.core.Timing.of(new double[]{0}, new double[]{150}, 256);
+        b.columns = 4;
+        b.title = "Imported";
+        b.artist = "Tester";
+        b.audioEntry = dst.getFileName().toString();
+        for (int i = 0; i < 24; i++) b.add(i % 4, 500 + i * 250, 0, false);
+        b.add(0, 7000, 7600, true);
+        komgp.core.Chart c = b.build();
+        Path kmt = tmp.resolve("imported.kmt");
+        komgp.format.TextChart.save(c, kmt, dst.getFileName().toString(), null);
+        var back = komgp.format.ChartIO.load(kmt, true);
+        check("导入后保存的 .kmt 可回读", back.ok());
+        if (back.ok()) {
+            check("回读音频条目正确",
+                    dst.getFileName().toString().equals(back.charts.get(0).audioName));
+            check("回读时音频一并加载", back.charts.get(0).audio != null);
+            check("回读音符数一致", back.charts.get(0).chart.noteCount() == c.noteCount());
+        }
     }
 
     /** 长条：判定语义 + 渲染像素（曾经出现过"击中后条身消失"的回归）。 */

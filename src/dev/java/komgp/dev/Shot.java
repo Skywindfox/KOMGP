@@ -129,6 +129,13 @@ public final class Shot {
                 PlayScreen s = new PlayScreen(app, item);
                 s.renderPreview(g, ps, renderAt);
             }
+            case "editor-new" -> {
+                komgp.ui.EditorScreen s = new komgp.ui.EditorScreen(app, null);
+                s.onEnter();
+                Thread.sleep(400);
+                s.update(16, 1000);
+                s.render(g);
+            }
             case "editor" -> {
                 komgp.ui.EditorScreen s = new komgp.ui.EditorScreen(app, item.path);
                 s.onEnter();

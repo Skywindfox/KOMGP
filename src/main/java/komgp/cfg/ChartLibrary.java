@@ -254,23 +254,35 @@ public final class ChartLibrary {
 
     /** 把外部谱面复制进曲库目录，返回是否成功。 */
     public boolean importFile(Path file) {
+        return importTo(file, chartsDir) != null;
+    }
+
+    /**
+     * 把文件复制进指定目录（默认不动已在该目录里的文件），返回落地路径。
+     * 同名时自动加 -1 / -2 后缀，不会覆盖用户文件。
+     */
+    public static Path importTo(Path file, Path dir) {
         try {
-            Files.createDirectories(chartsDir);
+            Files.createDirectories(dir);
+            Path abs = file.toAbsolutePath();
+            Path targetDir = dir.toAbsolutePath();
+            if (abs.getParent() != null && abs.getParent().equals(targetDir)) {
+                return abs;
+            }
             String name = file.getFileName().toString();
-            Path dst = chartsDir.resolve(name);
+            Path dst = targetDir.resolve(name);
             int n = 1;
             while (Files.exists(dst)) {
-                String base = name;
                 int dot = name.lastIndexOf('.');
                 String stem = dot > 0 ? name.substring(0, dot) : name;
                 String ext = dot > 0 ? name.substring(dot) : "";
-                dst = chartsDir.resolve(stem + "-" + (n++) + ext);
+                dst = targetDir.resolve(stem + "-" + (n++) + ext);
             }
             Files.copy(file, dst, StandardCopyOption.COPY_ATTRIBUTES);
-            return true;
+            return dst;
         } catch (IOException e) {
             Log.warn("导入失败 " + file + ": " + e.getMessage());
-            return false;
+            return null;
         }
     }
 }

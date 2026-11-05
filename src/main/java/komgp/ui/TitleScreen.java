@@ -17,7 +17,7 @@ import komgp.render.Theme;
 /** 主菜单：标题 + 三个入口 + 音符雨背景。 */
 public final class TitleScreen extends Screen {
 
-    private static final String[] LABELS = {"开始游戏", "设置", "退出游戏"};
+    private static final String[] LABELS = {"开始游戏", "谱面编辑器", "设置", "退出游戏"};
     private final List<Ui.Button> buttons = new ArrayList<>();
     private int selected;
 
@@ -43,7 +43,7 @@ public final class TitleScreen extends Screen {
         int x = Theme.W / 2 - w / 2;
         for (int i = 0; i < LABELS.length; i++) {
             int idx = i;
-            buttons.add(new Ui.Button(x, 372 + i * 66, w, 52, LABELS[i], () -> activate(idx)));
+            buttons.add(new Ui.Button(x, 352 + i * 60, w, 50, LABELS[i], () -> activate(idx)));
         }
     }
 
@@ -54,6 +54,10 @@ public final class TitleScreen extends Screen {
                 app.go(new SongSelectScreen(app));
             }
             case 1 -> {
+                app.sfx.play(komgp.audio.Sfx.Kind.OK);
+                app.go(new EditorScreen(app, null));
+            }
+            case 2 -> {
                 app.sfx.play(komgp.audio.Sfx.Kind.OK);
                 app.go(new SettingsScreen(app, null));
             }

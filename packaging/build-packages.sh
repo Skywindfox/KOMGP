@@ -196,7 +196,9 @@ SRCROOT="$STAGE/$NAME-$VERSION"
 rm -rf "$SRCROOT"
 mkdir -p "$SRCROOT"
 tar --exclude=./build --exclude=./dist --exclude=./charts --exclude=./shots \
-    --exclude=./config.json --exclude=./.git --exclude='*.log' -cf - . | tar -xf - -C "$SRCROOT"
+    --exclude=./config.json --exclude=./.git --exclude='*.log' \
+    --exclude='*.mp3' --exclude='*.ogg' --exclude='*.wav' --exclude='*.flac' \
+    -cf - . | tar -xf - -C "$SRCROOT"
 ( cd "$STAGE" && tar --owner=0 --group=0 --numeric-owner --sort=name --mtime="@$EPOCH" \
       -czf "$DIST/${NAME}-${VERSION}-src.tar.gz" "$(basename "$SRCROOT")" )
 echo "    $DIST/${NAME}-${VERSION}-src.tar.gz"

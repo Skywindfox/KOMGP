@@ -78,6 +78,8 @@ public final class EditorScreen extends Screen {
     private String difficulty = "Normal";
     private String level = "1";
     private String creator = "";
+    private String bpmText = "120";
+    private String offsetText = "0";
 
     private Path audioPath;
     private String audioName;
@@ -96,6 +98,7 @@ public final class EditorScreen extends Screen {
     private int hoverCol = -1;
     private double hoverTime;
     private int editField = -1;
+    private boolean fieldReplaced;
     private double escAt = -1e9;
 
     private final List<Path> audioChoices = new ArrayList<>();
@@ -146,6 +149,8 @@ public final class EditorScreen extends Screen {
                     difficulty = c.difficulty.isBlank() ? "Normal" : c.difficulty;
                     level = c.levelLabel();
                     creator = c.creator;
+                    bpmText = fmt(c.timing.bpmMain());
+                    offsetText = fmt(c.timing.msAt(c.timing.beatAt(0)));
                     audioName = lc.audioName;
                     notes.clear();
                     for (int i = 0; i < c.noteCount(); i++) {
@@ -180,31 +185,54 @@ public final class EditorScreen extends Screen {
         mode = Mode.PICK_AUDIO;
         audioChoices.clear();
         audioSel = 0;
-        try (var s = Files.walk(app.chartsDir, 4)) {
+        scanAudio(app.chartsDir, 1024);
+        // 顺手扫一下工作目录：用户经常把 music.mp3 直接扔在游戏根目录
+        scanAudio(app.baseDir, 2);
+        audioChoices.sort(Comparator.comparing(Path::toString));
+        if (audioChoices.isEmpty()) {
+            app.toast("没找到音频，按 I 打开文件选择框");
+        }
+    }
+
+    private void scanAudio(Path root, int depth) {
+        if (root == null || !Files.isDirectory(root)) return;
+        try (var s = Files.walk(root, depth)) {
             s.filter(Files::isRegularFile).forEach(p -> {
                 String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
+                if (p.getParent() != null && p.getParent().equals(app.baseDir)
+                        && !audioChoices.contains(p)) {
+                    // 根目录只看音频，不递归进 charts/ 重复收集
+                }
                 if (n.endsWith(".ogg") || n.endsWith(".mp3") || n.endsWith(".wav")
                         || n.endsWith(".flac")) {
-                    audioChoices.add(p);
+                    if (!audioChoices.contains(p)) audioChoices.add(p);
                 }
             });
         } catch (Exception e) {
             Log.warn("扫描音频失败: " + e.getMessage());
         }
-        audioChoices.sort(Comparator.comparing(Path::toString));
     }
 
-    private void createFromAudio(Path audio) {
+    private void createFromAudio(Path audioIn) {
+        Path audio = audioIn;
+        Path parent = audio.toAbsolutePath().getParent();
+        if (parent == null || !parent.equals(app.chartsDir.toAbsolutePath())) {
+            Path dst = komgp.cfg.ChartLibrary.importTo(audio, app.chartsDir);
+            if (dst != null) audio = dst;
+        }
         String name = audio.getFileName().toString();
         int dot = name.lastIndexOf('.');
         String stem = dot > 0 ? name.substring(0, dot) : name;
+        final Path usePath = audio;
         Thread t = new Thread(() -> {
             try {
-                Pcm p = Decoder.decode(Files.readAllBytes(audio), name);
+                Pcm p = Decoder.decode(Files.readAllBytes(usePath), name);
                 synchronized (this) {
                     pcm = p;
                     chart = null;
                     timing = Timing.of(new double[]{0}, new double[]{120}, 4096);
+                    bpmText = "120";
+                    offsetText = "0";
                     title = stem;
                     artist = "Unknown";
                     difficulty = "Normal";
@@ -220,7 +248,7 @@ public final class EditorScreen extends Screen {
                     viewStart = 0;
                     loading = false;
                     mode = Mode.EDIT;
-                    audioPath = audio;
+                    audioPath = usePath;
                 }
                 app.audio.loadSong(p);
             } catch (Exception e) {
@@ -231,6 +259,88 @@ public final class EditorScreen extends Screen {
         t.setDaemon(true);
         t.start();
         loading = true;
+    }
+
+    private static String fmt(double v) {
+        if (Math.abs(v - Math.rint(v)) < 0.005) return String.valueOf((long) Math.rint(v));
+        return String.format(Locale.ROOT, "%.2f", v);
+    }
+
+    // ------------------------------------------------------------------ 导入
+
+    /** 原生文件选择框（Linux 走 GTK，Windows 走系统对话框）。 */
+    private Path chooseFile(String title, boolean audioOnly) {
+        if (app.window() == null) {
+            app.toast("没有窗口句柄，无法打开文件对话框");
+            return null;
+        }
+        final Path[] out = new Path[1];
+        try {
+            javax.swing.SwingUtilities.invokeAndWait(() -> {
+                java.awt.FileDialog fd = new java.awt.FileDialog(
+                        (java.awt.Frame) app.window(), title, java.awt.FileDialog.LOAD);
+                fd.setDirectory(app.chartsDir.toString());
+                if (audioOnly) {
+                    fd.setFilenameFilter((dir, name) -> {
+                        String n = name.toLowerCase(Locale.ROOT);
+                        return n.endsWith(".ogg") || n.endsWith(".mp3")
+                                || n.endsWith(".wav") || n.endsWith(".flac");
+                    });
+                }
+                fd.setVisible(true);
+                String f = fd.getFile();
+                if (f != null && !f.isBlank()) {
+                    out[0] = Path.of(fd.getDirectory(), f);
+                }
+            });
+        } catch (Exception e) {
+            Log.warn("文件对话框失败: " + e.getMessage());
+            app.toast("打开文件对话框失败: " + e.getMessage());
+        }
+        return out[0];
+    }
+
+    /** 导入音频：复制进 charts/，然后以它为底新建谱面。 */
+    private void importAudio(Path file) {
+        if (file == null) return;
+        Path dst = komgp.cfg.ChartLibrary.importTo(file, app.chartsDir);
+        if (dst == null) {
+            app.toast("导入音频失败");
+            return;
+        }
+        app.toast("已导入音频: " + dst.getFileName());
+        createFromAudio(dst);
+    }
+
+    /** 导入谱面：复制进 charts/（明文谱面连带它引用的音频/曲绘），然后打开编辑。 */
+    private void importChart(Path file) {
+        if (file == null) return;
+        Path dst = komgp.cfg.ChartLibrary.importTo(file, app.chartsDir);
+        if (dst == null) {
+            app.toast("导入谱面失败");
+            return;
+        }
+        String lower = dst.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (lower.endsWith(komgp.format.TextChart.EXT)) {
+            try {
+                String text = Files.readString(dst, java.nio.charset.StandardCharsets.UTF_8);
+                for (String line : text.split("\\R")) {
+                    String t = line.trim();
+                    if (t.startsWith("audio ") || t.startsWith("cover ")) {
+                        String name = t.substring(t.indexOf(' ') + 1).trim();
+                        Path media = dst.getParent() == null ? Path.of(name)
+                                : dst.getParent().resolve(name);
+                        if (Files.isRegularFile(media)) {
+                            komgp.cfg.ChartLibrary.importTo(media, app.chartsDir);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.debug("复制明文谱面媒体失败: " + e.getMessage());
+            }
+        }
+        app.library.scan();
+        open(dst);
     }
 
     // ------------------------------------------------------------------ 编辑操作
@@ -460,6 +570,7 @@ public final class EditorScreen extends Screen {
         if (editField >= 0 && code != KeyEvent.VK_ESCAPE && code != KeyEvent.VK_TAB
                 && code != KeyEvent.VK_ENTER) {
             if (code == KeyEvent.VK_BACK_SPACE) {
+                fieldReplaced = true;
                 String cur = fieldValue(editField);
                 if (!cur.isEmpty()) setFieldValue(editField, cur.substring(0, cur.length() - 1));
                 return;
@@ -467,7 +578,15 @@ public final class EditorScreen extends Screen {
             String s = KeyEvent.getKeyText(code);
             if (s.length() == 1) {
                 char ch = s.charAt(0);
-                if (ch >= 32 && ch < 127) {
+                boolean numeric = editField >= 5;
+                boolean ok = numeric
+                        ? (ch >= '0' && ch <= '9') || ch == '.' || (ch == '-' && editField == 6)
+                        : ch >= 32 && ch < 127;
+                if (ok) {
+                    if (!fieldReplaced) {
+                        setFieldValue(editField, "");
+                        fieldReplaced = true;
+                    }
                     setFieldValue(editField, fieldValue(editField) + ch);
                 }
             }
@@ -486,7 +605,10 @@ public final class EditorScreen extends Screen {
             case KeyEvent.VK_LEFT -> seek(nowMs() - stepMs());
             case KeyEvent.VK_RIGHT -> seek(nowMs() + stepMs());
             case KeyEvent.VK_HOME -> seek(0);
-            case KeyEvent.VK_TAB -> editField = (editField + 2) % 5 - 1;
+            case KeyEvent.VK_TAB -> {
+                editField = editField >= FIELD_NAMES.length - 1 ? -1 : editField + 1;
+                fieldReplaced = false;
+            }
             case KeyEvent.VK_1 -> snapIndex = 0;
             case KeyEvent.VK_2 -> snapIndex = 1;
             case KeyEvent.VK_3 -> snapIndex = 2;
@@ -498,6 +620,14 @@ public final class EditorScreen extends Screen {
             case KeyEvent.VK_F2 -> save();
             case KeyEvent.VK_F3 -> exportMc();
             case KeyEvent.VK_N -> startAudioPicker();
+            case KeyEvent.VK_I -> {
+                Path picked = chooseFile("导入音频（mp3/ogg/wav/flac）", true);
+                if (picked != null) importAudio(picked);
+            }
+            case KeyEvent.VK_O -> {
+                Path picked = chooseFile("打开谱面（.kmt/.mc/.mcz/.json）", false);
+                if (picked != null) importChart(picked);
+            }
             case KeyEvent.VK_Z -> {
                 if (app.input.isCtrl()) doUndo();
             }
@@ -521,13 +651,17 @@ public final class EditorScreen extends Screen {
         return timing.msAt(timing.beatOfMs(cursorMs) + step) - cursorMs;
     }
 
+    private static final String[] FIELD_NAMES = {"标题", "艺术家", "难度", "等级", "谱师", "BPM", "起始偏移"};
+
     private String fieldValue(int i) {
         return switch (i) {
             case 0 -> title;
             case 1 -> artist;
             case 2 -> difficulty;
             case 3 -> level;
-            default -> creator;
+            case 4 -> creator;
+            case 5 -> bpmText;
+            default -> offsetText;
         };
     }
 
@@ -537,9 +671,35 @@ public final class EditorScreen extends Screen {
             case 1 -> artist = v;
             case 2 -> difficulty = v;
             case 3 -> level = v;
-            default -> creator = v;
+            case 4 -> creator = v;
+            case 5 -> {
+                bpmText = v;
+                rebuildTiming();
+            }
+            default -> {
+                offsetText = v;
+                rebuildTiming();
+            }
         }
         dirty = true;
+    }
+
+    /** 按当前 BPM / 偏移重建时间轴（编辑器只支持单一速度）。 */
+    private void rebuildTiming() {
+        double bpm = parseNum(bpmText, 120);
+        bpm = Math.max(20, Math.min(600, bpm));
+        double offset = parseNum(offsetText, 0);
+        double offBeat = offset * bpm / 60000.0;
+        timing = Timing.of(new double[]{offBeat}, new double[]{bpm}, offBeat + 8192);
+    }
+
+    private static double parseNum(String s, double def) {
+        if (s == null || s.isBlank()) return def;
+        try {
+            return Double.parseDouble(s.trim());
+        } catch (NumberFormatException e) {
+            return def;
+        }
     }
 
     private void pickKey(int code) {
@@ -550,7 +710,15 @@ public final class EditorScreen extends Screen {
             case KeyEvent.VK_DOWN -> audioSel = Math.floorMod(audioSel + 1,
                     Math.max(1, audioChoices.size()));
             case KeyEvent.VK_ENTER -> {
-                if (!audioChoices.isEmpty()) createFromAudio(audioChoices.get(audioSel));
+                if (!audioChoices.isEmpty()) importAudio(audioChoices.get(audioSel));
+            }
+            case KeyEvent.VK_I -> {
+                Path picked = chooseFile("导入音频（mp3/ogg/wav/flac）", true);
+                if (picked != null) importAudio(picked);
+            }
+            case KeyEvent.VK_O -> {
+                Path picked = chooseFile("打开谱面（.kmt/.mc/.mcz/.json）", false);
+                if (picked != null) importChart(picked);
             }
             default -> { }
         }
@@ -570,6 +738,15 @@ public final class EditorScreen extends Screen {
                 }
             }
             return;
+        }
+        // 左侧字段：点一下就进入编辑
+        for (int i = 0; i < FIELD_NAMES.length; i++) {
+            double y0 = 120 + i * 48;
+            if (x >= 36 && x <= 214 && y >= y0 + 6 && y <= y0 + 32) {
+                editField = i;
+                fieldReplaced = false;
+                return;
+            }
         }
         if (y >= RULER_Y && y < LANE_Y) {
             seek(xToTime(x));
@@ -669,27 +846,27 @@ public final class EditorScreen extends Screen {
     }
 
     private void drawLeftPanel(Graphics2D g) {
-        Painter.panel(g, 20, 96, 210, 486, 14, Theme.BG2);
+        Painter.panel(g, 20, 96, 210, 500, 14, Theme.BG2);
 
-        String[] labels = {"标题", "艺术家", "难度", "等级", "谱师"};
+        String[] labels = FIELD_NAMES;
         for (int i = 0; i < labels.length; i++) {
-            double y = 130 + i * 56;
+            double y = 120 + i * 48;
             boolean active = editField == i;
             Painter.text(g, labels[i], 36, y, Theme.tiny(), Theme.DIM);
-            Painter.round(g, 36, y + 8, 178, 28, 6,
+            Painter.round(g, 36, y + 6, 178, 26, 6,
                     active ? Theme.alpha(Theme.ACCENT, 40) : Theme.BG3);
-            Painter.strokeRound(g, 36, y + 8, 178, 28, 6,
+            Painter.strokeRound(g, 36, y + 6, 178, 26, 6,
                     active ? Theme.ACCENT : Theme.LINE, active ? 2f : 1f);
             String v = fieldValue(i);
-            Painter.text(g, Painter.ellipsis(g, v, Theme.small(), 166), 44, y + 28,
+            Painter.text(g, Painter.ellipsis(g, v, Theme.small(), 166), 44, y + 24,
                     Theme.small(), Theme.TEXT);
             if (active) {
-                Painter.fill(g, 44 + Painter.width(g, v, Theme.small()) + 1, y + 14, 2, 16,
+                Painter.fill(g, 44 + Painter.width(g, v, Theme.small()) + 1, y + 11, 2, 16,
                         Theme.ACCENT);
             }
         }
 
-        double y = 424;
+        double y = 466;
         Painter.text(g, "音频", 36, y, Theme.tiny(), Theme.DIM);
         Painter.text(g, Painter.ellipsis(g, audioName == null ? "（无）" : audioName,
                 Theme.small(), 178), 36, y + 20, Theme.small(), Theme.MUTED);
@@ -700,6 +877,8 @@ public final class EditorScreen extends Screen {
 
         Painter.text(g, "网格 " + SNAP_LABEL[snapIndex], 36, 556, Theme.small(), Theme.MUTED);
         Painter.text(g, String.format("缩放 %.3f", pxPerMs), 36, 576, Theme.tiny(), Theme.DIM);
+        Painter.text(g, "I 导入音频   O 打开谱面", 36, 620, Theme.tiny(), Theme.DIM);
+        Painter.text(g, "N 重新选音频  Tab 切字段", 36, 638, Theme.tiny(), Theme.DIM);
     }
 
     private void drawTimeline(Graphics2D g) {
@@ -801,13 +980,15 @@ public final class EditorScreen extends Screen {
     }
 
     private void drawAudioPicker(Graphics2D g) {
-        Painter.textC(g, "新建谱面：选择音频", Theme.W / 2.0, 110, Theme.f(26, true), Theme.TEXT);
-        Painter.textC(g, "把音频文件放进 charts/ 目录后按 N 重新扫描",
-                Theme.W / 2.0, 140, Theme.small(), Theme.MUTED);
+        Painter.textC(g, "新建谱面：导入音频", Theme.W / 2.0, 96, Theme.f(26, true), Theme.TEXT);
+        Painter.textC(g, "I 打开文件选择框（可导入任意位置的音频）    O 打开已有谱面    Esc 返回",
+                Theme.W / 2.0, 124, Theme.small(), Theme.MUTED);
         Painter.panel(g, 320, 160, 640, 420, 14, Theme.BG2);
         if (audioChoices.isEmpty()) {
-            Painter.textC(g, "没有找到音频文件（.ogg / .mp3 / .wav）",
-                    Theme.W / 2.0, 360, Theme.body(), Theme.WARN);
+            Painter.textC(g, "charts/ 和游戏目录里没有音频（.ogg / .mp3 / .wav / .flac）",
+                    Theme.W / 2.0, 340, Theme.body(), Theme.WARN);
+            Painter.textC(g, "按 I 用文件选择框挑一个 music.mp3 也可以",
+                    Theme.W / 2.0, 368, Theme.small(), Theme.MUTED);
         } else {
             g.setClip(340, 172, 600, 396);
             for (int i = 0; i < audioChoices.size(); i++) {

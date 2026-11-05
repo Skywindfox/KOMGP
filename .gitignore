@@ -5,3 +5,10 @@ config.json
 shots/window-*.png
 *.log
 packaging/__pycache__/
+
+# 用户自己的音频素材，不进仓库
+/*.mp3
+/*.ogg
+/*.wav
+/*.flac
+/*.m4a
