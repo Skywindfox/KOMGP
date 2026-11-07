@@ -1,7 +1,7 @@
 KOMGP  v0.1-test  (Windows)
 KitsuneOS Music Game Player
 
-一个用 Java 写的 4K 下落式音游，读取 Malody 的 .mc / .mcz 与 KOMGP 的 .kmt 明文谱面。
+一个用 Java 写的 4K 下落式音游，读取 Malody 的 .mcz 与 KOMGP 的 .kmt 明文谱面。
 
 ────────────────────────────
 运行要求
@@ -20,7 +20,7 @@ KitsuneOS Music Game Player
   3. 选曲页：↑↓ 选歌，←→ 换难度，Enter 开始
   4. 默认键位：D F J K（可在"设置"里改）
 
-  自己的谱面：把 .mc / .mcz / .kmt 放进 charts\ 目录（可建子文件夹），
+  自己的谱面：把 .mcz / .kmt 放进 charts\ 目录（可建子文件夹），
   在选曲页按 R 刷新；也可以把谱面文件拖到 KOMGP.exe 上。
 
 ────────────────────────────

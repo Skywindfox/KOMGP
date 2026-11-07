@@ -26,7 +26,7 @@ DESC_EN="$(cat <<'EOF'
 KOMGP (KitsuneOS Music Game Player) is a lightweight 4K fall-down rhythm game
 written in pure Java, designed for the KitsuneOS desktop.
 
-* Plays Malody .mc / .mcz charts and KOMGP plain-text .kmt charts
+* Plays Malody .mcz packages and KOMGP plain-text .kmt charts
 * Formats are detected by file content, not by extension
 * Built-in chart editor with plain-text and Malody export
 * Five judgement tiers, health bar, practice mode, per-chart timing offset
@@ -103,7 +103,7 @@ Homepage: $URL
 Description: $SUMMARY_EN
  $SUMMARY_ZH
  .
- KOMGP 是 KitsuneOS 的音乐游戏播放器：读取 Malody .mc/.mcz 与 KOMGP .kmt 明文谱面，
+ KOMGP 是 KitsuneOS 的音乐游戏播放器：读取 Malody .mcz 与 KOMGP .kmt 明文谱面，
  内置谱面编辑器，五档判定、练习模式、单曲延时校准、血条，2D 扁平界面、纯 Java2D 渲染。
 EOF
 ( cd "$DEB_ROOT" && find usr -type f -print0 | sort -z | xargs -0 md5sum > DEBIAN/md5sums )
@@ -182,7 +182,7 @@ install -m 0644 packaging/README-windows.txt "$WIN/README.txt"
 install -m 0644 packaging/komgp.ico "$WIN/komgp.ico"
 install -m 0644 packaging/win/debug-console.bat "$WIN/debug-console.bat"
 cat > "$WIN/charts/PUT-CHARTS-HERE.txt" <<'EOF'
-把 Malody 的 .mc / .mcz，或 KOMGP 的 .kmt 明文谱面放进这个目录
+把 Malody 的 .mcz，或 KOMGP 的 .kmt 明文谱面放进这个目录
 （可以建子文件夹），然后在游戏里的选曲页按 R 刷新。
 首次启动如果这里为空，游戏会自动生成 3 首演示曲。
 EOF

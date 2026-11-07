@@ -92,6 +92,26 @@ public final class AudioEngine {
         playFrom(0, leadIn);
     }
 
+    /**
+     * 带音频延迟的播放：谱面时钟照常从 -leadIn 走到 0，
+     * 但音频要等到谱面时间 {@code audioDelayMs} 才开始出声。
+     *
+     * <p>用于 Malody 的 SoundCue offset —— 语义是「音频晚 offset 开始」，
+     * 这样音符时间轴保持原样，不需要整体平移谱面。
+     */
+    public void playDelayed(double leadIn, double audioDelayMs) {
+        double delay = Math.max(0, audioDelayMs);
+        if (delay < 0.5) {
+            play(leadIn);
+            return;
+        }
+        // startOffset=delay 且 leadIn 也加 delay 时：
+        //   倒计时阶段 songMs = delay + el - (leadIn+delay) = el - leadIn
+        //   播放阶段   songMs = delay + deviceMs  -> 音频第 0 帧落在 songMs=delay
+        playFrom(0, leadIn + delay);
+        startOffsetMs = delay;
+    }
+
     /** 从指定歌曲时间开始播放（不足 1ms 的偏差可忽略）。 */
     public void playFrom(double fromMs, double leadIn) {
         stop();

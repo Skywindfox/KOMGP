@@ -503,7 +503,7 @@ public final class EditorScreen extends Screen {
             Path dir = audioPath != null ? audioPath.getParent() : app.chartsDir;
             if (dir == null) dir = app.chartsDir;
             String base = safeName(title + " [" + difficulty + "]");
-            Path target = dir.resolve(base + ".mc");
+            Path target = dir.resolve(base + ".mcz");
             byte[] audioBytes = audioPath == null ? null : Files.readAllBytes(audioPath);
             byte[] coverBytes = null;
             if (cover != null) {

@@ -48,6 +48,12 @@ public final class Chart {
     public final double[] endTime;
     public final boolean[] hold;
 
+    /**
+     * 谱面自带的音频延迟（毫秒）。Malody 的 SoundCue offset 语义是
+     * 「音频第 0 帧出现在谱面第 offset 毫秒」，因此这里只延迟音频播放，
+     * 绝不改动音符时间轴。
+     */
+    public final double audioDelayMs;
     public final Timing timing;
     public final double lastNoteMs;
     public final String fingerprint;
@@ -74,6 +80,7 @@ public final class Chart {
         this.time = b.times;
         this.endTime = b.ends;
         this.hold = b.holds;
+        this.audioDelayMs = Math.max(0, b.audioDelayMs);
         this.timing = b.timing;
         double last = 0;
         for (double t : time) last = Math.max(last, t);
@@ -165,6 +172,7 @@ public final class Chart {
         public int scrollHint;
         public String warning = "";
         public Timing timing = Timing.ofDefault();
+        public double audioDelayMs;
 
         private int[] cols = new int[0];
         private double[] times = new double[0];

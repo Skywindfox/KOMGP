@@ -120,9 +120,8 @@ public final class Main {
 
                 谱面格式:
                   .kmt     KOMGP 明文谱面（可直接手改）
-                  .mc/.mcz Malody 谱面包
-                  .json    裸 Malody chart.json
-                  加载时按文件内容识别，与扩展名无关。
+                  .mcz     Malody 包（当前版本）
+                  只支持这两种，按文件内容识别。
                 """);
     }
 }

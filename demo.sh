@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 重新生成内置演示谱面（3 首歌 / 4 张谱面，含合成音频与曲绘）
+# 重新生成内置演示谱面（Malody V 的 .mcz + 一份 KOMGP 明文 .kmt 示例）
 set -euo pipefail
 cd "$(dirname "$0")"
-if [ ! -d build/classes ]; then ./build.sh; fi
+./build.sh >/dev/null
 CP="build/classes"
 for j in lib/*.jar; do CP="$CP:$j"; done
 exec java -Dfile.encoding=UTF-8 -cp "$CP" komgp.tools.DemoGen charts

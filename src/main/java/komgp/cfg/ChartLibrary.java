@@ -105,8 +105,7 @@ public final class ChartLibrary {
                 files = s.filter(Files::isRegularFile)
                         .filter(p -> {
                             String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
-                            return n.endsWith(".kmt") || n.endsWith(".mc")
-                                    || n.endsWith(".mcz") || n.endsWith(".json");
+                            return n.endsWith(".kmt") || n.endsWith(".mcz");
                         })
                         .sorted(Comparator.comparing(Path::toString))
                         .toList();

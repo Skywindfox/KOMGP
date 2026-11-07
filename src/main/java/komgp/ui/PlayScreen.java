@@ -135,7 +135,7 @@ public final class PlayScreen extends Screen {
                 app.audio.setRate((float) app.settings.playRate);
                 app.audio.setVolume((float) app.settings.volume);
                 app.audio.loadSong(p);
-                app.audio.play(LEAD_IN);
+                app.audio.playDelayed(LEAD_IN, chart.audioDelayMs);
                 state = State.PLAYING;
                 ready = true;
             } catch (Throwable e) {

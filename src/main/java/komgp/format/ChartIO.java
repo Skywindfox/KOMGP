@@ -12,11 +12,10 @@ import komgp.util.Log;
 /**
  * 谱面加载入口：**按文件内容识别格式**，而不是只看扩展名。
  *
- * <p>识别优先级：
+ * <p>只支持两种格式（按内容识别）：</p>
  * <ol>
- *   <li>首行是 {@code KOMGP CHART} → 明文谱面（{@link TextChart}）</li>
- *   <li>{@code PK\x03\x04} → Malody 的 .mc / .mcz（本质是 ZIP）</li>
- *   <li>首个非空白字符是 {@code {} 且含 note/time → 裸 chart.json</li>
+ *   <li>首行是 {@code KOMGP CHART} → KOMGP 明文谱面 {@code .kmt}</li>
+ *   <li>{@code PK\x03\x04} → Malody 包 {@code .mcz}（ZIP）</li>
  * </ol>
  *
  * <p>这样把 .kmt 改名成 .txt、把 .mc 改名成 .zip 都能正常打开，
@@ -24,7 +23,7 @@ import komgp.util.Log;
  */
 public final class ChartIO {
 
-    public enum Kind { TEXT, ZIP, JSON, UNKNOWN }
+    public enum Kind { TEXT, ZIP, UNKNOWN }
 
     private ChartIO() {}
 
@@ -35,8 +34,7 @@ public final class ChartIO {
         // 内容识别不出来时，退回扩展名
         String n = path.getFileName().toString().toLowerCase(Locale.ROOT);
         if (n.endsWith(TextChart.EXT)) return Kind.TEXT;
-        if (n.endsWith(".mc") || n.endsWith(".mcz")) return Kind.ZIP;
-        if (n.endsWith(".json")) return Kind.JSON;
+        if (n.endsWith(".mcz")) return Kind.ZIP;
         return Kind.UNKNOWN;
     }
 
@@ -47,12 +45,6 @@ public final class ChartIO {
                 && (head[2] == 3 || head[2] == 5) && (head[3] == 4 || head[3] == 6)) {
             return Kind.ZIP;
         }
-        String s = new String(head, 0, Math.min(head.length, 4096), StandardCharsets.UTF_8).stripLeading();
-        if (s.startsWith("{")) {
-            if (s.contains("\"note\"") || s.contains("\"time\"") || s.contains("\"meta\"")) {
-                return Kind.JSON;
-            }
-        }
         if (name != null) {
             String n = name.toLowerCase(Locale.ROOT);
             if (n.endsWith(TextChart.EXT)) return Kind.TEXT;
@@ -62,9 +54,8 @@ public final class ChartIO {
 
     public static String kindName(Kind k) {
         return switch (k) {
-            case TEXT -> "明文谱面";
-            case ZIP -> "Malody 包";
-            case JSON -> "Malody JSON";
+            case TEXT -> "KOMGP 明文谱面";
+            case ZIP -> "Malody .mcz 包";
             default -> "未知格式";
         };
     }
@@ -87,9 +78,9 @@ public final class ChartIO {
         Log.debug("识别 " + path.getFileName() + " -> " + kindName(k));
         return switch (k) {
             case TEXT -> TextChart.load(path, withMedia);
-            case ZIP, JSON -> MalodyLoader.load(path, withMedia);
+            case ZIP -> MalodyLoader.load(path, withMedia);
             case UNKNOWN -> ChartPackage.failed(path, "unknown",
-                    "无法识别的谱面格式（既不是明文谱面也不是 Malody 包）");
+                    "无法识别的谱面：现在只支持 .kmt（明文）和 .mcz（Malody 包）");
         };
     }
 
@@ -121,11 +112,7 @@ public final class ChartIO {
 
     public static boolean isChartFile(Path p) {
         String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
-        if (n.endsWith(TextChart.EXT) || n.endsWith(".mc") || n.endsWith(".mcz")
-                || n.endsWith(".json")) {
-            return true;
-        }
-        Kind k = detect(p);
-        return k != Kind.UNKNOWN;
+        if (n.endsWith(TextChart.EXT) || n.endsWith(".mcz")) return true;
+        return detect(p) != Kind.UNKNOWN;
     }
 }

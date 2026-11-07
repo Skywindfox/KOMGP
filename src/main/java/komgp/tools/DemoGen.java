@@ -91,7 +91,7 @@ public final class DemoGen {
         byte[] coverPng = png(cover);
         byte[] bgPng = png(bg);
 
-        // 难度：1 首 2 张（.mcz 内嵌两张 .mc），其余 1 张
+        // 难度：1 首 2 张（同一个 .mcz 里两个 .mc），其余 1 张
         List<String[]> diffs = switch (s.file) {
             case "01 Neon Pulse" -> java.util.List.<String[]>of(
                     new String[]{"Normal", "7", "normal"},
@@ -100,28 +100,56 @@ public final class DemoGen {
             default -> java.util.List.<String[]>of(new String[]{"Easy", "4", "normal"});
         };
 
-        if (diffs.size() > 1) {
-            Path mcz = dir.resolve(s.file + ".mcz");
-            try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(mcz))) {
-                for (String[] d : diffs) {
-                    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                    packMc(bos, s, d[0], d[1], "hard".equals(d[2]),
-                            audioName, audioBytes, coverPng, bgPng);
-                    zos.putNextEntry(new ZipEntry(s.file + " [" + d[0] + "].mc"));
-                    zos.write(bos.toByteArray());
-                    zos.closeEntry();
-                }
+        Path mcz = dir.resolve(s.file + ".mcz");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(mcz))) {
+            for (String[] d : diffs) {
+                // 核心：.mc 条目 = 纯 JSON 文本（Malody 当前格式），不是 zip
+                byte[] json = Json.write(buildChart(s, d[0], d[1], "hard".equals(d[2]), audioName), true)
+                        .getBytes(StandardCharsets.UTF_8);
+                put(zos, s.file + " [" + d[0] + "].mc", json);
             }
-            Log.info("生成 " + mcz.getFileName() + " (" + diffs.size() + " 难度, " + audioName + ")");
-        } else {
-            String[] d = diffs.get(0);
-            Path mc = dir.resolve(s.file + ".mc");
-            try (OutputStream os = Files.newOutputStream(mc)) {
-                packMc(os, s, d[0], d[1], "hard".equals(d[2]), audioName, audioBytes, coverPng, bgPng);
-            }
-            Log.info("生成 " + mc.getFileName() + " (" + audioName + ", "
-                    + String.format("%.1f MB", Files.size(mc) / 1e6) + ")");
+            put(zos, audioName, audioBytes);
+            put(zos, "cover.png", coverPng);
+            put(zos, "bg.png", bgPng);
         }
+        Log.info("生成 " + mcz.getFileName() + " (" + diffs.size() + " 难度, " + audioName
+                + ", " + String.format("%.1f MB", Files.size(mcz) / 1e6) + ")");
+
+        // 再额外导出一份 KOMGP 明文谱面，演示 .kmt 写法
+        if (s.file.startsWith("01")) {
+            Path textDir = dir.resolve("文本谱示例");
+            Files.createDirectories(textDir);
+            Files.copy(audio, textDir.resolve(audioName), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            Files.write(textDir.resolve("cover.png"), coverPng);
+            Map<String, Object> root = buildChart(s, "Hard", "12", true, audioName);
+            @SuppressWarnings("unchecked")
+            List<Object> notes = (List<Object>) root.get("note");
+            komgp.core.Chart.Builder b = komgp.core.Chart.builder();
+            b.timing = komgp.core.Timing.of(new double[]{0}, new double[]{s.bpm}, 4096);
+            b.columns = 4;
+            b.title = s.title;
+            b.titleOrig = s.titleZh;
+            b.artist = s.artist;
+            b.creator = "AutoDemo";
+            b.difficulty = "Hard";
+            b.level = "12";
+            b.audioEntry = audioName;
+            b.coverEntry = "cover.png";
+            for (Object o : notes) {
+                Map<String, Object> m = Json.asObj(o);
+                if (m == null) continue;
+                double beat = komgp.format.MalodyLoader.beatOf(m.get("beat"));
+                int col = (int) Json.num(m.get("column"), 0);
+                double end = komgp.format.MalodyLoader.beatOf(m.get("endbeat"));
+                double t = b.timing.msAt(beat);
+                boolean hold = !Double.isNaN(end);
+                b.add(col, t, hold ? b.timing.msAt(end) : t, hold);
+            }
+            komgp.core.Chart c = b.build();
+            komgp.format.TextChart.save(c, textDir.resolve("Neon Pulse [Hard].kmt"), audioName, "cover.png");
+            Log.info("生成 " + textDir.resolve("Neon Pulse [Hard].kmt").getFileName() + " (明文示例)");
+        }
+
         Files.deleteIfExists(wav);
         if (audio != wav) Files.deleteIfExists(audio);
         Files.deleteIfExists(tmp);
@@ -157,8 +185,6 @@ public final class DemoGen {
                                                   String audioName) {
         Random rnd = new Random(s.seed * 31 + diffName.hashCode());
         List<Object> notes = new ArrayList<>();
-        List<Object> extras = new ArrayList<>();
-
         int bars = s.bars;
         int lastCol = -1;
 
@@ -180,8 +206,6 @@ public final class DemoGen {
                     default -> new int[]{0, 3, 6, 8, 11, 14};
                 };
             }
-
-            // 开场两小节留白，方便进入状态
             if (bar < 2) continue;
 
             int cursor = 0;
@@ -189,18 +213,12 @@ public final class DemoGen {
                 int col = ladder(cursor++, bar, rnd, lastCol, hard);
                 lastCol = col;
                 addNote(notes, bar, step, col);
-                // 高潮段落加和弦
-                if (hard && section == 3 && step % 8 == 0) {
-                    int second = (col + 2) % 4;
-                    addNote(notes, bar, step, second);
-                }
+                if (hard && section == 3 && step % 8 == 0) addNote(notes, bar, step, (col + 2) % 4);
             }
-
-            // 每 4 小节来一根长条
             if (bar % 4 == 2) {
                 int col = rnd.nextInt(4);
                 int len = hard ? 8 : 6;
-                addHold(extras, bar, 0, col, bar, len);
+                addHold(notes, bar, 0, col, len);
             }
         }
 
@@ -210,23 +228,19 @@ public final class DemoGen {
         meta.put("cover", "cover.png");
         meta.put("version", diffName);
         meta.put("level", level);
-        meta.put("preview", 6000);
         meta.put("mode", 0);
-        meta.put("time", 0);
 
         Map<String, Object> song = new LinkedHashMap<>();
         song.put("title", s.title);
         song.put("titleorg", s.titleZh);
         song.put("artist", s.artist);
-        song.put("id", s.seed % 100000);
+        song.put("file", audioName);
         meta.put("song", song);
 
         Map<String, Object> modeExt = new LinkedHashMap<>();
         modeExt.put("column", 4);
         modeExt.put("bar_begin", 2);
-        modeExt.put("speed", 0);
         meta.put("mode_ext", modeExt);
-        meta.put("audio", audioName);
 
         Map<String, Object> time = new LinkedHashMap<>();
         time.put("beat", List.of(0, 0, 1));
@@ -236,7 +250,6 @@ public final class DemoGen {
         root.put("meta", meta);
         root.put("time", List.of(time));
         root.put("note", notes);
-        root.put("extra", extras);
         return root;
     }
 
@@ -255,18 +268,16 @@ public final class DemoGen {
     private static void addNote(List<Object> notes, int bar, int step, int col) {
         Map<String, Object> n = new LinkedHashMap<>();
         n.put("beat", List.of(bar, step, 16));
-        n.put("x", col);
-        n.put("ex", 0);
+        n.put("column", col);
         notes.add(n);
     }
 
-    private static void addHold(List<Object> extras, int bar, int step, int col, int endBar, int lenSteps) {
+    private static void addHold(List<Object> notes, int bar, int step, int col, int lenSteps) {
         Map<String, Object> n = new LinkedHashMap<>();
         n.put("beat", List.of(bar, step, 16));
-        n.put("endbeat", List.of(endBar, (step + lenSteps) % 16, 16));
-        n.put("x", col);
-        n.put("type", 1);
-        extras.add(n);
+        n.put("endbeat", List.of(bar, (step + lenSteps) % 16, 16));
+        n.put("column", col);
+        notes.add(n);
     }
 
     // ------------------------------------------------------------------ 音频合成

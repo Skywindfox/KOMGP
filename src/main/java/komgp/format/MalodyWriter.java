@@ -63,6 +63,7 @@ public final class MalodyWriter {
         song.put("title", chart.title);
         if (chart.titleOrig != null && !chart.titleOrig.isBlank()) song.put("titleorg", chart.titleOrig);
         song.put("artist", chart.artist);
+        if (audioName != null) song.put("file", audioName);
         meta.put("song", song);
         Map<String, Object> modeExt = new LinkedHashMap<>();
         modeExt.put("column", chart.columns);
@@ -82,28 +83,21 @@ public final class MalodyWriter {
         }
 
         List<Object> notes = new ArrayList<>();
-        List<Object> extra = new ArrayList<>();
         int n = chart.noteCount();
         for (int i = 0; i < n; i++) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("beat", beatOf(chart.timing.beatOfMs(chart.time[i])));
             if (chart.hold[i]) {
                 m.put("endbeat", beatOf(chart.timing.beatOfMs(chart.endTime[i])));
-                m.put("x", chart.column[i]);
-                m.put("type", 1);
-                extra.add(m);
-            } else {
-                m.put("x", chart.column[i]);
-                m.put("ex", 0);
-                notes.add(m);
             }
+            m.put("column", chart.column[i]);
+            notes.add(m);
         }
 
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("meta", meta);
         root.put("time", time);
         root.put("note", notes);
-        root.put("extra", extra);
         return root;
     }
 

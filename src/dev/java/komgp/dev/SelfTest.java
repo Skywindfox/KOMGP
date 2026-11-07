@@ -184,10 +184,10 @@ public final class SelfTest {
     }
 
     private static void testAudioDecode(Path dir) throws Exception {
-        Path mc = dir.resolve("02 Midnight Drive.mc");
+        Path mc = dir.resolve("02 Midnight Drive.mcz");
         if (Files.exists(mc)) {
             var pkg = ChartIO.load(mc, true);
-            check("MP3 包解析", pkg.ok());
+            check("MP3 包解析（.mcz）", pkg.ok());
             if (pkg.ok()) {
                 var lc = pkg.charts.get(0);
                 check("MP3 有字节", lc.audio != null && lc.audio.length > 10000);
@@ -213,7 +213,7 @@ public final class SelfTest {
     }
 
     private static void testAutoplay(Path dir) {
-        Path mc = dir.resolve("03 Clockwork Garden.mc");
+        Path mc = dir.resolve("03 Clockwork Garden.mcz");
         if (!Files.exists(mc)) {
             check("找到 WAV 谱面", false);
             return;
@@ -307,8 +307,10 @@ public final class SelfTest {
         for (int v : perCol) allCols &= v > 0;
         check("Malody V 音符分布在 4 列上", allCols);
         check("Malody V 找到音频（song.file）", lc.audio != null && lc.audio.length > 10000);
-        check("Malody V 应用了音源偏移 478ms",
-                Math.abs(c.time[0] - 1522) < 60);
+        check("Malody V 不改写音符时间轴（首音符仍是 2000ms）",
+                Math.abs(c.time[0] - 2000) < 60);
+        check("Malody V 把音源偏移记成音频延迟 478ms",
+                Math.abs(c.audioDelayMs - 478) < 1);
         check("Malody V BPM 解析", Math.abs(c.timing.bpmMax() - 126) < 0.01);
     }
 
