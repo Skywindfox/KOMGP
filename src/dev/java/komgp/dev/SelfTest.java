@@ -92,12 +92,15 @@ public final class SelfTest {
     }
 
     private static void testBeatMath() {
-        // Malody: [小节, 分子, 分母] => (小节 + 分子/分母) * 4 拍
+        // Malody V: beat:[a,b,c] => a + b/c 拍（四分音符），**不**乘 4。
+        // 这一条是对着真实谱面 + 音频起音实测出来的：乘 4 会让整张谱慢四倍。
         check("beat [0,0,1] = 0", close(beat(new Object[]{0, 0, 1}), 0));
-        check("beat [1,0,4] = 4", close(beat(new Object[]{1, 0, 4}), 4));
-        check("beat [1,1,4] = 5", close(beat(new Object[]{1, 1, 4}), 5));
-        check("beat [1,1,8] = 4.5", close(beat(new Object[]{1, 1, 8}), 4.5));
-        check("beat [2,3,16] = 8.75", close(beat(new Object[]{2, 3, 16}), 8.75));
+        check("beat [1,0,4] = 1", close(beat(new Object[]{1, 0, 4}), 1));
+        check("beat [1,1,4] = 1.25", close(beat(new Object[]{1, 1, 4}), 1.25));
+        check("beat [1,1,8] = 1.125", close(beat(new Object[]{1, 1, 8}), 1.125));
+        check("beat [2,3,16] = 2.1875", close(beat(new Object[]{2, 3, 16}), 2.1875));
+        check("拍数组往返", close(
+                beat(komgp.format.MalodyLoader.beatArray(42.5).toArray()), 42.5));
     }
 
     private static double beat(Object[] arr) {
@@ -307,8 +310,9 @@ public final class SelfTest {
         for (int v : perCol) allCols &= v > 0;
         check("Malody V 音符分布在 4 列上", allCols);
         check("Malody V 找到音频（song.file）", lc.audio != null && lc.audio.length > 10000);
-        check("Malody V 不改写音符时间轴（首音符仍是 2000ms）",
-                Math.abs(c.time[0] - 2000) < 60);
+        check("Malody V 拍数换算正确（首音符 500ms）",
+                Math.abs(c.time[0] - 500) < 60);
+        check("Malody V 全曲长度约 20 秒", c.lastNoteMs > 19000 && c.lastNoteMs < 21000);
         check("Malody V 把音源偏移记成音频延迟 478ms",
                 Math.abs(c.audioDelayMs - 478) < 1);
         check("Malody V BPM 解析", Math.abs(c.timing.bpmMax() - 126) < 0.01);

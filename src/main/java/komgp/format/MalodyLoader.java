@@ -358,24 +358,39 @@ public final class MalodyLoader {
         }
     }
 
-    /** beat 数组 -> 绝对拍数：[小节, 分子, 分母] => (小节 + 分子/分母) * 4。 */
+    /**
+     * {@code beat:[a,b,c]} -> 绝对拍数（四分音符计数） = {@code a + b/c}。
+     *
+     * <p>注意：这里**不**乘 4。实测（对照音频起音）Malody V 的 .mc 里第一个分量
+     * 已经是拍数而不是小节号，也就是 4/4 下一小节 = 4 拍 = 4 个序号；
+     * 若按 (a + b/c) * 4 换算，整张谱会慢 4 倍。
+     */
     public static double beatOf(Object o) {
         List<Object> l = Json.asArr(o);
         if (l != null) {
             if (l.size() >= 3) {
-                double bar = Json.num(l.get(0), 0);
+                double a = Json.num(l.get(0), 0);
                 double num = Json.num(l.get(1), 0);
                 double den = Json.num(l.get(2), 0);
                 if (den <= 0) den = 1;
-                return (bar + num / den) * 4.0;
+                return a + num / den;
             }
             if (l.size() == 2) {
-                return Json.num(l.get(0), 0) * 4.0 + Json.num(l.get(1), 0);
+                return Json.num(l.get(0), 0) + Json.num(l.get(1), 0);
             }
-            if (l.size() == 1) return Json.num(l.get(0), 0) * 4.0;
+            if (l.size() == 1) return Json.num(l.get(0), 0);
         }
         if (o instanceof Number n) return n.doubleValue();
         return Double.NaN;
+    }
+
+    /** 绝对拍数 -> {@code [a,b,c]}（1/16 拍精度），供导出/演示谱使用。 */
+    public static List<Object> beatArray(double beats) {
+        double b = Math.max(0, beats);
+        int a = (int) Math.floor(b);
+        int num = (int) Math.round((b - a) * 16);
+        if (num >= 16) { a++; num -= 16; }
+        return List.of(a, num, 16);
     }
 
     private static Object firstOf(Map<String, Object> m, String... keys) {

@@ -265,17 +265,22 @@ public final class DemoGen {
         return col;
     }
 
+    /** 16 分步进 -> 绝对拍数（一小节 4 拍）。 */
+    private static double beatOfStep(int bar, int step) {
+        return bar * 4.0 + step / 4.0;
+    }
+
     private static void addNote(List<Object> notes, int bar, int step, int col) {
         Map<String, Object> n = new LinkedHashMap<>();
-        n.put("beat", List.of(bar, step, 16));
+        n.put("beat", komgp.format.MalodyLoader.beatArray(beatOfStep(bar, step)));
         n.put("column", col);
         notes.add(n);
     }
 
     private static void addHold(List<Object> notes, int bar, int step, int col, int lenSteps) {
         Map<String, Object> n = new LinkedHashMap<>();
-        n.put("beat", List.of(bar, step, 16));
-        n.put("endbeat", List.of(bar, (step + lenSteps) % 16, 16));
+        n.put("beat", komgp.format.MalodyLoader.beatArray(beatOfStep(bar, step)));
+        n.put("endbeat", komgp.format.MalodyLoader.beatArray(beatOfStep(bar, step + lenSteps)));
         n.put("column", col);
         notes.add(n);
     }
