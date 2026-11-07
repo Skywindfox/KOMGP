@@ -47,6 +47,8 @@ public final class AudioEngine {
     private long startNano;
     private volatile double srcPos;          // 已消费的源帧
     private volatile double deviceMs;        // 声卡已播放毫秒（输出流时间）
+    /** 曲尾结束时刻；之后时钟按墙钟继续走，保证谱面比音频长时也能正常结算。 */
+    private volatile long endedAtNanos;
     private volatile long deviceAtNanos;
     private double pausedSongMs;
 
@@ -175,7 +177,10 @@ public final class AudioEngine {
             case PAUSED:
                 return pausedSongMs;
             case ENDED: {
-                return song == null ? 0 : song.durationMs();
+                double dur = song == null ? 0 : song.durationMs();
+                long e = endedAtNanos;
+                if (e == 0) return dur;
+                return dur + (now - e) / 1e6;
             }
             default:
                 return 0;
@@ -261,6 +266,7 @@ public final class AudioEngine {
 
             int done = fill(out, frames, srcFrames);
             if (done <= 0) {
+                endedAtNanos = System.nanoTime();
                 state = ENDED;
                 break;
             }
@@ -293,6 +299,7 @@ public final class AudioEngine {
                     // 忽略
                 }
             }
+            endedAtNanos = System.nanoTime();
             state = ENDED;
         }
     }

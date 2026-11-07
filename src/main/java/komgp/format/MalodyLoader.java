@@ -95,6 +95,9 @@ public final class MalodyLoader {
                     return null;
                 }
             }
+
+            @Override
+            public Src parent() { return null; }
         };
         return parseBundle(src, zf.getName(), "", null, path, withMedia, out);
     }
@@ -103,16 +106,44 @@ public final class MalodyLoader {
         List<String> names();
 
         byte[] read(String name);
+
+        /** 外层容器（.mcz 里套 .mc 时，媒体往往在外层）。 */
+        Src parent();
+    }
+
+    /** 沿父链读取：内层找不到就往外层找。 */
+    private static byte[] readAny(Src src, String name) {
+        for (Src cur = src; cur != null; cur = cur.parent()) {
+            byte[] b = cur.read(name);
+            if (b != null) return b;
+        }
+        return null;
+    }
+
+    /** URL 解码（媒体名里常见 %20）。 */
+    private static String uriDecode(String s) {
+        if (s == null || s.indexOf('%') < 0) return s;
+        try {
+            return java.net.URLDecoder.decode(s, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return s;
+        }
     }
 
     /** 把一段 byte[] 当作 ZIP 再解一层（.mcz 里套 .mc）。 */
     private static final class BytesSource implements Src {
         private final Map<String, byte[]> entries;
         private final List<String> names;
+        private final Src parent;
 
         BytesSource(Map<String, byte[]> entries) {
+            this(entries, null);
+        }
+
+        BytesSource(Map<String, byte[]> entries, Src parent) {
             this.entries = entries;
             this.names = new ArrayList<>(entries.keySet());
+            this.parent = parent;
         }
 
         @Override
@@ -120,6 +151,9 @@ public final class MalodyLoader {
 
         @Override
         public byte[] read(String name) { return entries.get(name); }
+
+        @Override
+        public Src parent() { return parent; }
     }
 
     private static String parseBundle(Src src, String zipName, String container, byte[] directJson,
@@ -131,8 +165,13 @@ public final class MalodyLoader {
             String lower = name.toLowerCase(Locale.ROOT);
             if (!lower.endsWith(".mc") && !lower.endsWith(".mcz")) continue;
             byte[] data = src.read(name);
-            if (data == null || data.length < 4 || data[0] != 'P' || data[1] != 'K') continue;
-            mapZip(data, name, withMedia, path, out);
+            if (data == null || data.length < 4) continue;
+            if (isZip(data)) {
+                mapZip(data, name, withMedia, path, out, src);
+            } else if (looksLikeJsonChart(data)) {
+                // Malody V：.mc 可能是纯 JSON 文本，媒体在外层 .mcz 里
+                parseOne(data, src, name, path, "", withMedia, out);
+            }
         }
 
         // B. 看起来像谱面 JSON 的条目
@@ -172,11 +211,25 @@ public final class MalodyLoader {
     }
 
     private static void mapZip(byte[] data, String innerName, boolean withMedia, Path path,
-                               List<ChartEntry> out) {
+                               List<ChartEntry> out, Src outer) {
         Map<String, byte[]> entries = unzip(data, 128L << 20);
         if (entries.isEmpty()) return;
-        BytesSource src = new BytesSource(entries);
+        BytesSource src = new BytesSource(entries, outer);
         parseBundle(src, innerName, innerName, null, path, withMedia, out);
+    }
+
+    private static boolean isZip(byte[] d) {
+        return d.length >= 4 && d[0] == 'P' && d[1] == 'K'
+                && (d[2] == 3 || d[2] == 5) && (d[3] == 4 || d[3] == 6);
+    }
+
+    /** Malody V 的 .mc 是纯 JSON：{"meta":...,"time":...,"note":...} */
+    private static boolean looksLikeJsonChart(byte[] d) {
+        int i = 0;
+        if (d.length > 3 && (d[0] & 0xFF) == 0xEF && (d[1] & 0xFF) == 0xBB) i = 3; // BOM
+        while (i < d.length && (d[i] == ' ' || d[i] == '\n' || d[i] == '\r' || d[i] == '\t')) i++;
+        if (i >= d.length || d[i] != '{') return false;
+        return looksLikeChart(d);
     }
 
     private static boolean looksLikeChart(byte[] data) {
@@ -257,8 +310,17 @@ public final class MalodyLoader {
         int dropped = 0;
         int maxColSeen = -1;
 
+        double cueOffsetMs = 0;
+        String cueSound = null;
         if (notes != null) {
             for (Object o : notes) {
+                Map<String, Object> m = Json.asObj(o);
+                if (m != null && isSoundCue(m)) {
+                    String snd = Json.str(m.get("sound"), null);
+                    if (snd != null && cueSound == null) cueSound = snd;
+                    if (m.get("offset") != null) cueOffsetMs = numOf(m.get("offset"), 0);
+                    continue;
+                }
                 double[] r = readNote(o);
                 if (r == null) continue;
                 maxColSeen = Math.max(maxColSeen, (int) r[0]);
@@ -311,18 +373,27 @@ public final class MalodyLoader {
         b.scrollHint = (int) numOf(modeExt.get("speed"), 0);
         b.timing = timing;
 
+        // 音源偏移：Malody 的 SoundCue“等 offset 毫秒再播放”意味着
+        // 音频第 0 帧对应谱面 offset 处，所以要整体前移 offset。
+        double shift = -cueOffsetMs;
+        double minT = Double.MAX_VALUE;
+        for (double[] r : raw) minT = Math.min(minT, timing.msAt(r[1]) + shift);
+        if (minT < 0) shift -= minT; // 不让音符负时间
         for (double[] r : raw) {
             int col = (int) r[0];
             if (col < 0 || col >= columns) { dropped++; continue; }
-            double t = timing.msAt(r[1]);
+            double t = timing.msAt(r[1]) + shift;
             boolean hold = !Double.isNaN(r[2]);
-            double end = hold ? timing.msAt(r[2]) : t;
+            double end = hold ? timing.msAt(r[2]) + shift : t;
             b.add(col, t, end, hold);
         }
 
         // ---- 媒体
         String audioReq = firstNonBlank(Json.str(meta.get("audio"), null),
-                Json.str(meta.get("songfile"), null), soundCue, null);
+                Json.str(meta.get("songfile"), null),
+                Json.str(song.get("file"), null),
+                Json.str(song.get("audio"), null),
+                soundCue, cueSound, null);
         String coverReq = firstNonBlank(Json.str(meta.get("cover"), null),
                 Json.str(meta.get("jacket"), null), null);
         String bgReq = firstNonBlank(Json.str(meta.get("background"), null),
@@ -334,9 +405,9 @@ public final class MalodyLoader {
         if (coverName == null) coverName = bgName;
         if (bgName == null) bgName = coverName;
 
-        byte[] audio = withMedia && audioName != null ? src.read(audioName) : null;
-        byte[] cover = withMedia && coverName != null ? src.read(coverName) : null;
-        byte[] bg = withMedia && bgName != null ? src.read(bgName) : null;
+        byte[] audio = withMedia && audioName != null ? readAny(src, audioName) : null;
+        byte[] cover = withMedia && coverName != null ? readAny(src, coverName) : null;
+        byte[] bg = withMedia && bgName != null ? readAny(src, bgName) : null;
         if (withMedia && cover != null && bg == cover) bg = cover;
 
         b.audioEntry = audioName;
@@ -433,11 +504,12 @@ public final class MalodyLoader {
 
     /** 在包里找媒体条目：先按声明名，再按大小写/同名不同目录，最后按扩展名兜底。 */
     private static String findEntry(Src src, String requested, String[] exts, String hint) {
-        List<String> names = src.names();
+        List<String> names = new ArrayList<>();
+        for (Src cur = src; cur != null; cur = cur.parent()) names.addAll(cur.names());
         if (names.isEmpty()) return null;
 
         if (requested != null) {
-            String req = requested.replace('\\', '/');
+            String req = uriDecode(requested).replace('\\', '/');
             while (req.startsWith("./")) req = req.substring(2);
             String exact = null;
             String base = null;
@@ -445,7 +517,7 @@ public final class MalodyLoader {
             int slash = req.lastIndexOf('/');
             String reqBase = slash >= 0 ? req.substring(slash + 1) : req;
             for (String name : names) {
-                String n = name.replace('\\', '/');
+                String n = uriDecode(name).replace('\\', '/');
                 String nBase = n.substring(n.lastIndexOf('/') + 1);
                 if (n.equalsIgnoreCase(req)) { exact = name; break; }
                 if (base == null && nBase.equalsIgnoreCase(reqBase)) base = name;
@@ -531,18 +603,32 @@ public final class MalodyLoader {
         return Double.NaN;
     }
 
-    /** 读一个 note 对象，返回 {col, startBeat, endBeat(可能 NaN)}，无效返回 null。 */
+    /**
+     * 读一个 note 对象，返回 {col, startBeat, endBeat(可能 NaN)}。
+     *
+     * <p>字段兼容：老格式用 {@code x}，Malody V 用 {@code column}；
+     * 没有列号的是「音源事件」（type=1 + sound/offset），返回 null 由调用方单独处理。
+     */
     private static double[] readNote(Object o) {
         Map<String, Object> m = Json.asObj(o);
         if (m == null) return null;
         double b = beatOf(m.get("beat"));
         if (Double.isNaN(b)) return null;
-        int col = (int) numOf(m.get("x"), 0);
+        Object colObj = firstOf(m, "column", "x");
+        if (colObj == null) return null;
+        int col = (int) numOf(colObj, -1);
         if (col < 0) return null;
 
         double endBeat = beatOf(firstOf(m, "endbeat", "endBeat"));
         boolean hasEnd = !Double.isNaN(endBeat) && endBeat > b;
         return new double[]{col, b, hasEnd ? endBeat : Double.NaN};
+    }
+
+    /** 音源事件（Malody V 写在 note 数组里：{"type":1,"sound":"x.ogg","offset":478}）。 */
+    private static boolean isSoundCue(Map<String, Object> m) {
+        if (firstOf(m, "column", "x") != null) return false;
+        double type = numOf(m.get("type"), -1);
+        return m.get("sound") != null || type == 1;
     }
 
     private static Map<String, byte[]> siblingMedia(Path dir) {

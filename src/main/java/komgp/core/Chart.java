@@ -100,10 +100,11 @@ public final class Chart {
         return String.format("%d:%02d", s / 60, s % 60);
     }
 
+    /** 徽章上显示的等级：优先 meta.level，其次从难度名里抠数字，最后 "?"。 */
     public String levelLabel() {
-        String lv = level == null || level.isBlank() ? difficulty : level;
-        if (lv == null || lv.isBlank()) return "?";
-        return lv.trim();
+        if (level != null && !level.isBlank()) return level.trim();
+        String digits = difficulty == null ? "" : difficulty.replaceAll("[^0-9]", "");
+        return digits.isEmpty() ? "?" : digits;
     }
 
     /** 难度等级数值（用于排序/着色），解析失败给 1。 */

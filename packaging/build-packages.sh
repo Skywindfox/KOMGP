@@ -259,7 +259,14 @@ echo "    $DIST/RELEASE-NOTES.md"
 echo
 echo "==> 校验"
 echo "-- rpm 摘要 --"
-rpm -K "$RPM_OUT" 2>&1 | tail -1
+# 注意：包没有 OpenPGP 签名，rpm -K 会因"签名缺失"返回非 0；
+# 这里只关心摘要是否通过。
+rpm -Kv "$RPM_OUT" 2>&1 | grep -E "Header SHA256|Payload SHA256" || true
+if rpm -Kv "$RPM_OUT" 2>&1 | grep -q "Header SHA256 摘要: OK"; then
+    echo "    ^ 摘要校验通过（未签名包，签名检查跳过）"
+else
+    echo "    !! rpm 摘要校验失败" >&2
+fi
 echo "-- rpm 信息 --"
 rpm -qip "$RPM_OUT" 2>/dev/null | sed -n '1,6p'
 echo "-- rpm 文件 --"

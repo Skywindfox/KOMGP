@@ -56,6 +56,7 @@ public final class SelfTest {
         testTextFormat(charts);
         testHold(charts);
         testAudioImport(charts);
+        testMalodyV(charts);
 
         System.out.println();
         System.out.println("==== 自测结果: " + passed + " 通过, " + failed + " 失败 ====");
@@ -277,6 +278,38 @@ public final class SelfTest {
         check("去重", c.noteCount() == 2);
         check("非法长条降级为单点", !c.hold[1]);
         check("列越界被裁掉", c.noteCount() == 2);
+    }
+
+    /**
+     * Malody V 新格式：.mcz 里套纯 JSON 的 .mc，音符用 column、长条用 endbeat，
+     * 音源事件（type=1 + sound/offset）要跳过并把 offset 应用到时间轴。
+     */
+    private static void testMalodyV(Path charts) {
+        Path mv = charts == null ? null : charts.resolve("Unknown.mcz");
+        if (mv == null || !java.nio.file.Files.exists(mv)) {
+            System.out.println("  [--]   跳过 Malody V 用例（没有 charts/Unknown.mcz）");
+            return;
+        }
+        var pkg = komgp.format.ChartIO.load(mv, true);
+        check("Malody V 包可加载", pkg.ok());
+        if (!pkg.ok()) {
+            System.out.println("        原因: " + pkg.error);
+            return;
+        }
+        var lc = pkg.charts.get(0);
+        var c = lc.chart;
+        check("Malody V 找到 4K 谱面", c.columns == 4 && c.noteCount() > 0);
+        check("Malody V 有长条（endbeat）", c.holdCount() > 0);
+        check("Malody V 音源事件未被当成音符", c.noteCount() == 88);
+        int[] perCol = new int[c.columns];
+        for (int i = 0; i < c.noteCount(); i++) perCol[c.column[i]]++;
+        boolean allCols = true;
+        for (int v : perCol) allCols &= v > 0;
+        check("Malody V 音符分布在 4 列上", allCols);
+        check("Malody V 找到音频（song.file）", lc.audio != null && lc.audio.length > 10000);
+        check("Malody V 应用了音源偏移 478ms",
+                Math.abs(c.time[0] - 1522) < 60);
+        check("Malody V BPM 解析", Math.abs(c.timing.bpmMax() - 126) < 0.01);
     }
 
     /** 用户把 music.mp3 丢进目录后的导入链路：复制 -> 解码 -> 存 .kmt -> 回读。 */
